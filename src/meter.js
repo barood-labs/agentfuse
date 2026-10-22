@@ -13,7 +13,7 @@ function color(state, s, enabled = true) {
 }
 function line(fuse, { colors = true } = {}) {
   const t = fuse.tightest();
-  const icon = fuse.state === 'blown' ? '💥 FUSE BLOWN' : fuse.state === 'warn' ? '⚠️  agentfuse' : '⚡ agentfuse';
+  const icon = fuse.state === 'blown' ? '✖ FUSE BLOWN' : fuse.state === 'warn' ? '⚠ agentfuse' : '⚡ agentfuse';
   if (!t) return `${icon} ${usd(fuse.spent)} spent · ${fuse.requests} req · no cap`;
   const ratio = t.used / t.cap;
   return `${color(fuse.state, `${icon} ${bar(ratio)} ${usd(t.used)} / ${usd(t.cap)}`, colors)} ${t.name} · ${fuse.requests} req`;
@@ -21,6 +21,6 @@ function line(fuse, { colors = true } = {}) {
 function title(fuse) {
   const t = fuse.tightest();
   const pct = t ? Math.round((t.used / t.cap) * 100) : 0;
-  return `${fuse.state === 'blown' ? '💥' : fuse.state === 'warn' ? '⚠️' : '⚡'} ${usd(fuse.spent)}${t ? ` / ${usd(t.cap)} (${pct}%)` : ''}`;
+  return `${fuse.state === 'blown' ? '✖' : fuse.state === 'warn' ? '⚠' : '⚡'} ${usd(fuse.spent)}${t ? ` / ${usd(t.cap)} (${pct}%)` : ''}`;
 }
 module.exports = { line, title, bar, usd };

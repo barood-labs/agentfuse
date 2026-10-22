@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Fuse } = require('./fuse');
 const { startProxy } = require('./proxy');
-const { makePricer } = require('./pricing');
+const { makePricer, PRICES_CHECKED } = require('./pricing');
 const { Ledger, homeDir, findRepo } = require('./ledger');
 const meter = require('./meter');
 const pkg = require('../package.json');
@@ -26,6 +26,7 @@ Options:
   -r, --repo-cap <usd>   cap for this git repo today
   -w, --warn <0-1>       warn threshold (default 0.8)
   --on-cap <mode>        kill (default) | pause | block
+  --no-preflight         don't block a request whose estimated cost would cross the cap
   --no-strict            let an in-flight response finish even if it crosses the cap
   --prices <file.json>   override/extend the price table ({"model-prefix": {"input":..,"output":..}})
   --port <n>             proxy port (default: random)
@@ -34,16 +35,19 @@ Options:
   -h, --help, -v, --version
 
 Examples:
-  npx agentfuse --cap 2 -- claude
-  npx agentfuse --cap 10 --daily 30 --on-cap pause -- codex
+  npx github:barood-labs/agentfuse --cap 2 -- claude
+  npx github:barood-labs/agentfuse --cap 10 --daily 30 --on-cap pause -- codex
+  agentfuse --cap 1 -- gemini                   # Gemini CLI (GOOGLE_GEMINI_BASE_URL)
   agentfuse --cap 1 -- python my_agent.py      # any tool that honours *_BASE_URL
 
-Exit codes: child's own code, or 86 when the fuse killed it.`;
+Exit codes: child's own code, or 86 when the fuse killed it.
+Prices: built-in table checked ${PRICES_CHECKED}; unknown models are billed at a high fallback rate.
+Not on npm yet (the "agentfuse" npm name is someone else's). Use npx github:barood-labs/agentfuse.`;
 
 const FUSE_EXIT = 86;
 
 function parseArgs(argv) {
-  const o = { cap: Number(process.env.AGENTFUSE_CAP) || 5, daily: Infinity, repoCap: Infinity, warn: 0.8, onCap: 'kill', strict: true, port: 0, quiet: false, cmd: [], sub: null, pos: [] };
+  const o = { cap: Number(process.env.AGENTFUSE_CAP) || 5, daily: Infinity, repoCap: Infinity, warn: 0.8, onCap: 'kill', strict: true, preflight: true, port: 0, quiet: false, cmd: [], sub: null, pos: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]; const next = () => { const v = argv[++i]; if (v === undefined) throw new Error(`${a} needs a value`); return v; };
     const num = (v) => { const n = Number(String(v).replace(/^\$/, '')); if (!(n >= 0)) throw new Error(`${a}: "${v}" is not a number`); return n; };
@@ -56,6 +60,7 @@ function parseArgs(argv) {
     else if (a === '-w' || a === '--warn') o.warn = num(next());
     else if (a === '--on-cap') { o.onCap = next(); if (!['kill', 'pause', 'block'].includes(o.onCap)) throw new Error('--on-cap must be kill, pause or block'); }
     else if (a === '--no-strict') o.strict = false;
+    else if (a === '--no-preflight') o.preflight = false;
     else if (a === '--prices') o.prices = next();
     else if (a === '--port') o.port = num(next());
     else if (a === '--quiet') o.quiet = true;
@@ -77,11 +82,22 @@ function liveSessions() {
     .filter((s) => s && isAlive(s.pid));
 }
 function isAlive(pid) { try { process.kill(pid, 0); return true; } catch { return false; } }
-function getJSON(url, method = 'GET', body) {
+function getJSON(url, method = 'GET', body, headers = {}) {
   return new Promise((resolve, reject) => {
-    const r = http.request(url, { method, headers: { 'content-type': 'application/json' } }, (res) => { let s = ''; res.on('data', (c) => (s += c)); res.on('end', () => { try { resolve(JSON.parse(s)); } catch (e) { reject(e); } }); });
+    const r = http.request(url, { method, headers: { 'content-type': 'application/json', ...headers } }, (res) => { let s = ''; res.on('data', (c) => (s += c)); res.on('end', () => { try { resolve(JSON.parse(s)); } catch (e) { reject(e); } }); });
     r.on('error', reject); r.end(body ? JSON.stringify(body) : undefined);
   });
+}
+
+/** If the user already points an SDK at a gateway (e.g. OPENAI_BASE_URL=https://openrouter.ai/api/v1), chain to it. */
+function inheritedUpstreams(env = process.env) {
+  const ups = {};
+  const own = (u) => /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/(anthropic|openai|gemini|openrouter)/.test(u || '');
+  const take = (k, envName, stripV1) => { const u = env[envName]; if (u && !own(u)) ups[k] = stripV1 ? u.replace(/\/+$/, '').replace(/\/v1$/, '') : u.replace(/\/+$/, ''); };
+  take('anthropic', 'ANTHROPIC_BASE_URL'); take('openai', 'OPENAI_BASE_URL', true); take('gemini', 'GOOGLE_GEMINI_BASE_URL'); take('openrouter', 'OPENROUTER_BASE_URL', true);
+  // explicit AGENTFUSE_*_UPSTREAM always wins
+  for (const k of ['anthropic', 'openai', 'gemini', 'openrouter']) { const e = env[`AGENTFUSE_${k.toUpperCase()}_UPSTREAM`]; if (e) ups[k] = e; }
+  return ups;
 }
 
 async function setup(o, { log }) {
@@ -90,13 +106,18 @@ async function setup(o, { log }) {
   const pricer = makePricer(o.prices ? JSON.parse(fs.readFileSync(o.prices, 'utf8')) : {});
   const fuse = new Fuse({ cap: o.cap || Infinity, daily: o.daily, repoCap: o.repoCap, warnAt: o.warn, baseDaily: ledger.spentToday(), baseRepo: ledger.spentToday({ repo }) });
   const session = o.session || `${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}-${crypto.randomBytes(2).toString('hex')}`;
-  const proxy = await startProxy({ fuse, pricer, ledger, onCap: o.onCap, port: o.port, session, repo, strict: o.strict, log });
+  const token = crypto.randomBytes(16).toString('hex');
+  const ups = inheritedUpstreams();
+  for (const [k, v] of Object.entries(ups)) log(`${k} upstream: ${v} (from your environment)`);
+  const proxy = await startProxy({ token, fuse, pricer, ledger, onCap: o.onCap, port: o.port, session, repo, strict: o.strict, preflight: o.preflight, upstreams: ups, log });
   const sfile = path.join(sessionsDir(), `${session}.json`);
-  fs.writeFileSync(sfile, JSON.stringify({ session, pid: process.pid, url: proxy.url, repo, startedAt: new Date().toISOString() }), { mode: 0o600 });
+  fs.writeFileSync(sfile, JSON.stringify({ session, pid: process.pid, url: proxy.url, token, repo, startedAt: new Date().toISOString() }), { mode: 0o600 });
   const env = {
     ANTHROPIC_BASE_URL: `${proxy.url}/anthropic`,
     OPENAI_BASE_URL: `${proxy.url}/openai/v1`,
     OPENAI_API_BASE: `${proxy.url}/openai/v1`,
+    GOOGLE_GEMINI_BASE_URL: `${proxy.url}/gemini`,
+    OPENROUTER_BASE_URL: `${proxy.url}/openrouter/v1`,
     AGENTFUSE_URL: proxy.url,
     AGENTFUSE_SESSION: session,
   };
@@ -132,7 +153,8 @@ async function run(argv) {
     const live = liveSessions().filter((s) => !o.session || s.session === o.session);
     if (!live.length) { console.error('no running agentfuse session found'); return 1; }
     const s = live.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
-    const st = await getJSON(`${s.url}/_agentfuse/raise`, 'POST', { usd: amt });
+    const st = await getJSON(`${s.url}/_agentfuse/raise`, 'POST', { usd: amt }, { 'x-agentfuse-token': s.token });
+    if (st.error) { console.error(`agentfuse: ${st.error}`); return 1; }
     console.log(`raised ${s.session} by $${amt} → state ${st.state}`); return 0;
   }
   if (o.sub === 'report') {
@@ -174,7 +196,7 @@ async function run(argv) {
   const child = spawn(o.cmd[0], o.cmd.slice(1), { stdio: 'inherit', env: { ...process.env, ...ctx.env } });
   let killedByFuse = false;
   fuse.on('state', (s, prev) => {
-    if (s === 'warn' && prev === 'ok') say(meter.line(fuse, { colors: tty }) + `  — ${Math.round(o.warn * 100)}% of budget used`);
+    if (s === 'warn' && prev === 'ok') say(`[agentfuse] ⚠ ${Math.round(o.warn * 100)}% of budget used`);
     if (s === 'blown') {
       say(meter.line(fuse, { colors: tty }) + `  — ${fuse.reason}`);
       if (o.onCap === 'kill' && !killedByFuse) {
@@ -183,7 +205,7 @@ async function run(argv) {
         child.kill('SIGTERM');
         setTimeout(() => { if (child.exitCode === null) child.kill('SIGKILL'); }, 3000).unref();
       } else if (o.onCap === 'pause') say(`[agentfuse] agent paused. Run \`agentfuse raise 5\` in another terminal to add $5, or Ctrl-C to stop.`);
-      else say('[agentfuse] blocking further model calls (HTTP 402).');
+      else if (o.onCap === 'block') say('[agentfuse] blocking further model calls (HTTP 402).');
     }
   });
   const fwd = (sig) => () => child.kill(sig);
@@ -196,7 +218,7 @@ async function run(argv) {
   await ctx.proxy.close(); fs.rmSync(ctx.sfile, { force: true });
   const { rec, file } = receipt(ctx, { command: o.cmd.join(' '), killedByFuse, exitCode: killedByFuse ? FUSE_EXIT : code });
   if (o.receipt) fs.writeFileSync(o.receipt, JSON.stringify(rec, null, 2));
-  say(`\n🧾 agentfuse receipt — ${meter.usd(rec.spent)} across ${rec.requests} request(s)${killedByFuse ? ' — agent stopped by fuse' : ''}`);
+  say(`\n▤ agentfuse receipt — ${meter.usd(rec.spent)} across ${rec.requests} request(s)${killedByFuse ? ' — agent stopped by fuse' : ''}`);
   for (const [m, v] of Object.entries(rec.byModel)) say(`   ${meter.usd(v.usd).padStart(9)}  ${m}  (in ${v.input}, out ${v.output}, cache r/w ${v.cacheRead}/${v.cacheWrite})`);
   if (rec.unknownModels.length) say(`   ⚠ unknown price for ${rec.unknownModels.join(', ')} — billed at fallback (pessimistic) rate; add them with --prices`);
   say(`   ${file}`);
@@ -204,4 +226,4 @@ async function run(argv) {
   return killedByFuse ? FUSE_EXIT : code;
 }
 
-module.exports = { run, parseArgs, FUSE_EXIT, HELP };
+module.exports = { run, parseArgs, inheritedUpstreams, FUSE_EXIT, HELP };
