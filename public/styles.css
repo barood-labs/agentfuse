@@ -169,3 +169,41 @@ header.top {
   margin-top: 14px; color: var(--muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap;
 }
 .footer code { color: var(--neon); }
+
+.goalbar button.busy {
+  position: relative;
+  letter-spacing: 0.04em;
+  animation: pulseBtn 1.1s ease-in-out infinite;
+}
+@keyframes pulseBtn {
+  0%, 100% { box-shadow: 0 0 18px rgba(108, 240, 255, 0.3); }
+  50% { box-shadow: 0 0 34px rgba(108, 240, 255, 0.65); }
+}
+.scorebox .num.flourish {
+  animation: scorePop 0.85s cubic-bezier(.2,.9,.2,1);
+  filter: drop-shadow(0 0 28px rgba(93,255,176,0.55)) drop-shadow(0 0 18px rgba(155,123,255,0.45));
+}
+@keyframes scorePop {
+  0% { transform: scale(0.82); opacity: 0.6; }
+  55% { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.scorebox.perfect .meter > i {
+  background: linear-gradient(90deg, var(--green), var(--neon), var(--violet));
+  box-shadow: 0 0 22px rgba(93,255,176,0.7);
+}
+.agent-card.loading::after {
+  content: "";
+  position: absolute; inset: 0; border-radius: 14px;
+  background: linear-gradient(90deg, transparent, rgba(108,240,255,0.08), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+  pointer-events: none;
+}
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.shell.running .brand h1 {
+  text-shadow: 0 0 18px rgba(108,240,255,0.25);
+}

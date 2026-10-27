@@ -38,10 +38,24 @@ function renderAgents() {
 }
 
 function renderScore() {
-  $('score').textContent = String(state.score);
+  const num = $('score');
+  const prev = Number(num.textContent) || 0;
+  num.textContent = String(state.score);
   $('scoreLabel').textContent = state.label || 'score';
   const pct = Math.max(0, Math.min(100, (100 * state.score) / Math.max(1, state.max)));
   $('meter').style.width = pct + '%';
+  const box = num.closest('.scorebox');
+  if (state.score >= state.max && state.max > 0) {
+    box?.classList.add('perfect');
+    if (prev < state.score) {
+      num.classList.remove('flourish');
+      void num.offsetWidth;
+      num.classList.add('flourish');
+    }
+  } else {
+    box?.classList.remove('perfect');
+    num.classList.remove('flourish');
+  }
 }
 
 function addTimeline(kind, title, body, meta = '') {
@@ -129,7 +143,7 @@ function handleEvent(evt) {
       state.label = evt.status || 'complete';
       renderScore();
       addLog('system', evt.status === 'failed' ? 'error' : 'info', evt.summary || 'run complete', evt.ts);
-      $('runBtn').disabled = false;
+      resetRunBtn();
       $('runMeta').textContent = `${evt.status || 'complete'} · ${state.runId || ''}`;
       break;
     default:
@@ -173,15 +187,26 @@ async function refreshHealth() {
 
 async function startRun() {
   const goal = $('goal').value.trim() || 'Add a hard spending cap demo path';
-  $('runBtn').disabled = true;
+  const btn = $('runBtn');
+  btn.disabled = true;
+  btn.classList.add('busy');
+  btn.dataset.label = btn.dataset.label || btn.textContent;
+  btn.textContent = 'Forging…';
+  document.querySelector('.shell')?.classList.add('running');
   $('timeline').innerHTML = '';
   $('log').innerHTML = '';
   state.agents = {};
   state.score = 0;
   state.label = 'starting';
   renderAgents();
+  // Placeholder crew while spawn events arrive
+  $('agents').innerHTML = ['Planner', 'Coder', 'Verifier']
+    .map((n) => `<div class="agent-card loading"><div class="name"><span>${n}</span><span class="status queued">queued</span></div><div class="role">warming up</div></div>`)
+    .join('');
   renderScore();
   $('runMeta').textContent = 'starting…';
+  addTimeline('plan', 'Ignition', '', 'POST /api/run · waiting for Planner');
+  addLog('system', 'info', 'forge run requested');
   try {
     const r = await fetch('/api/run', {
       method: 'POST',
@@ -194,8 +219,16 @@ async function startRun() {
     $('runMeta').textContent = `run ${j.runId}`;
   } catch (e) {
     addLog('system', 'error', e.message || String(e));
-    $('runBtn').disabled = false;
+    resetRunBtn();
   }
+}
+
+function resetRunBtn() {
+  const btn = $('runBtn');
+  btn.disabled = false;
+  btn.classList.remove('busy');
+  btn.textContent = btn.dataset.label || 'Run forge';
+  document.querySelector('.shell')?.classList.remove('running');
 }
 
 $('runBtn').onclick = startRun;
