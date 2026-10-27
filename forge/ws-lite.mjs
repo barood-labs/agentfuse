@@ -122,6 +122,10 @@ export function attachWebSocketServer(server, { path = '/ws' } = {}) {
       const data = typeof msg === 'string' ? msg : JSON.stringify(msg);
       for (const c of clients) c.send(data);
     },
+    close() {
+      for (const c of clients) c.close();
+      clients.clear();
+    },
     get size() {
       return clients.size;
     },

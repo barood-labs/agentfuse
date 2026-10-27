@@ -14,9 +14,13 @@
   ],
   "scripts": {
     "test": "node --test",
+    "pretest": "npm run forge:build",
     "demo": "node examples/demo.js",
-    "forge": "node forge/mock-server.mjs",
-    "forge:demo": "node forge/mock-server.mjs"
+    "forge:build": "tsc -p forge/tsconfig.json",
+    "preforge": "npm run forge:build",
+    "forge": "node forge/dist/cli.js",
+    "preforge:demo": "npm run forge:build",
+    "forge:demo": "node forge/dist/cli.js"
   },
   "engines": {
     "node": ">=18.17"
@@ -33,5 +37,9 @@
     "ai-agents",
     "spend-limit"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "18.19.64",
+    "typescript": "5.6.3"
+  }
 }
