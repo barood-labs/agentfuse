@@ -43,6 +43,35 @@ Agents loop. They retry a flaky test 40 times, re-read a 200k-token repo every t
 - 🧾 **Receipts and a ledger.** A JSON receipt per session, the ledger at `~/.agentfuse/ledger.jsonl`, and `agentfuse report` to break spend down by model and by repo.
 - 🪶 **Zero dependencies**, about 800 lines of Node, local only.
 
+
+## Forge (cinematic agent dashboard)
+
+> **UI branch:** `forge-ui` ships a neon-glass Plan→Code→Verify dashboard plus a **mock** HTTP/WS server that speaks the locked Forge contract. When Money’s forge backend lands, rebase this UI onto that branch — same event names, same routes.
+
+**Contract**
+
+| Kind | Names |
+| --- | --- |
+| WebSocket | `agent.spawn` · `agent.status` · `agent.log` · `plan.step` · `code.diff` · `verify.result` · `score.update` · `run.complete` |
+| HTTP | `GET /api/health` · `GET /api/run/:id` · `POST /api/run` `{ "goal": "…" }` |
+| UI | `/` (also `/ui`) served from `public/` |
+
+**Run the mock demo (no API keys, $0 spend)**
+
+```bash
+npm run forge
+# open http://localhost:8787/
+# click “Run forge” — watch agents spawn, plan steps, diffs, verify, score
+```
+
+```bash
+curl -s http://localhost:8787/api/health
+curl -s -X POST http://localhost:8787/api/run -H 'content-type: application/json'   -d '{"goal":"Add a hard spending cap with pre-flight blocking"}'
+```
+
+Files: `public/` (UI) · `forge/mock-server.mjs` · `forge/ws-lite.mjs` (zero-dep WS).
+
+
 ## Install
 
 ```bash

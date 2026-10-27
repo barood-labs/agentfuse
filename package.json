@@ -2,11 +2,36 @@
   "name": "agentfuse",
   "version": "0.1.0",
   "description": "A hard spending cap and kill switch for AI coding agents. Local proxy for Anthropic & OpenAI-compatible APIs with live cost metering.",
-  "bin": { "agentfuse": "bin/agentfuse.js" },
+  "bin": {
+    "agentfuse": "bin/agentfuse.js"
+  },
   "main": "src/index.js",
-  "files": ["bin", "src", "README.md", "LICENSE"],
-  "scripts": { "test": "node --test", "demo": "node examples/demo.js" },
-  "engines": { "node": ">=18.17" },
-  "keywords": ["claude-code", "codex", "llm", "budget", "cost", "proxy", "anthropic", "openai", "ai-agents", "spend-limit"],
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "demo": "node examples/demo.js",
+    "forge": "node forge/mock-server.mjs",
+    "forge:demo": "node forge/mock-server.mjs"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "llm",
+    "budget",
+    "cost",
+    "proxy",
+    "anthropic",
+    "openai",
+    "ai-agents",
+    "spend-limit"
+  ],
   "license": "MIT"
 }
