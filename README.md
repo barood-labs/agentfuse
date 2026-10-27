@@ -10,6 +10,30 @@ The fuse blows <i>before</i> the request that would cross the limit is sent.</p>
 <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
 </p>
 
+<p align="center">
+<img src="https://img.shields.io/badge/Forge-Planner%20%E2%86%92%20Coder%20%E2%86%92%20Verifier-9b7bff" alt="Forge">
+<img src="https://img.shields.io/badge/demo-$0%20mock--llm-5dffb0" alt="mock llm">
+</p>
+
+## 🔥 Forge — watch agents plan, code, and verify live
+
+Neon glass dashboard for a real local multi-agent loop: **Planner → Coder → Verifier**. They share tools (`read_file` · `write_file` · `run_tests` · `score`), miss on purpose, then fix until the rubric hits **100**. Model is labeled **MOCK** — no API key, no network, **$0**. The spend-cap proxy below is unchanged.
+
+```bash
+npm install && npm run forge   # → http://localhost:8787/  click “Run forge”
+```
+
+<p align="center"><img src="docs/forge-dashboard.png" alt="AgentFuse Forge neon dashboard — Planner, Coder, Verifier mid-run ending at score 100" width="920"><br>
+<sub><b>Live Forge run:</b> WebSocket timeline + agent cards + score flourish. Deterministic mock-llm, score <b>100</b>.</sub></p>
+
+**Contract the UI speaks**
+
+- **WS** `agent.spawn` · `agent.status` · `agent.log` · `plan.step` · `code.diff` · `verify.result` · `score.update` · `run.complete`
+- **HTTP** `GET /api/health` · `GET /api/run/:id` · `POST /api/run` `{ "goal": "…" }`
+- **UI** `/` (also `/ui`) from `public/` · fields in [`forge/CONTRACT.md`](forge/CONTRACT.md)
+
+---
+
 ```bash
 npx github:barood-labs/agentfuse --cap 5 -- claude
 ```
@@ -42,6 +66,30 @@ Agents loop. They retry a flaky test 40 times, re-read a 200k-token repo every t
 - 📟 **Live meter** in your terminal and in the window title (`⚡ $1.23 / $5.00 (25%)`), so it stays visible while the agent's own TUI runs.
 - 🧾 **Receipts and a ledger.** A JSON receipt per session, the ledger at `~/.agentfuse/ledger.jsonl`, and `agentfuse report` to break spend down by model and by repo.
 - 🪶 **Zero dependencies**, about 800 lines of Node, local only.
+
+
+## Forge deep dive
+
+Same loop as the hero above — details for contributors.
+
+They share a tool registry (`read_file`, `write_file`, `run_tests`, `score`). The planner pins a `node:test` file. The coder's first patch fails it on purpose, the verifier scores the miss, and the coder fixes it. Rubric: **tests pass (60) + task complete (40)** → clean run **100**.
+
+```bash
+npm install          # typescript compiles the forge. The proxy runtime still has zero dependencies.
+npm run forge        # http://localhost:8787/  — click “Run forge”
+```
+
+```bash
+curl -s http://localhost:8787/api/health
+curl -s -X POST http://localhost:8787/api/run \
+  -H 'content-type: application/json' \
+  -d '{"goal":"Ship a hard spending cap with pre-flight blocking"}'
+```
+
+`GET /api/run/:id` returns the run and its event log. A goal containing the words `fail` or `broken` stays red so the verifier card can be shown in the error state.
+
+Files: `public/` (neon UI) · `forge/src` (loop, tools, MOCK LLM) · `forge/ws-lite.mjs` (zero-dep WebSocket) · `docs/forge-dashboard.png` (README hero).
+
 
 ## Install
 
@@ -145,8 +193,10 @@ The ledger (`~/.agentfuse/ledger.jsonl`) stores the timestamp, session, repo pat
 ## Develop
 
 ```bash
-npm test        # 32 tests against a mock API, $0
+npm install     # typescript, for the forge only
+npm test        # spend-cap proxy suite + forge core, $0
 npm run demo    # the GIF above: a runaway agent vs a $1 fuse
+npm run forge   # neon dashboard on http://localhost:8787/
 ```
 
 PRs for more providers (Bedrock, Vertex, Azure), price updates and live-test reports are very welcome.
